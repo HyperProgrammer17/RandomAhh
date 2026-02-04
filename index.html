@@ -1,202 +1,33 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Online Tank Battle - FIX</title>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <style>
-        body { margin: 0; background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
-        canvas { background: #1e293b; border: 3px solid #38bdf8; border-radius: 8px; cursor: crosshair; }
-        
-        #ui-layer { position: absolute; top: 20px; width: 800px; display: flex; justify-content: space-between; pointer-events: none; }
-        .score { font-size: 24px; font-weight: bold; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 20px; }
-
-        #setup-screen {
-            position: absolute; inset: 0; background: rgba(15, 23, 42, 0.95);
-            display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100;
-        }
-        .card { background: #1e293b; padding: 30px; border-radius: 15px; border: 1px solid #38bdf8; text-align: center; box-shadow: 0 0 30px rgba(56, 189, 248, 0.2); }
-        input { padding: 12px; border-radius: 5px; border: none; width: 200px; margin: 10px; font-size: 16px; }
-        button { padding: 12px 24px; background: #38bdf8; color: #0f172a; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
-        button:hover { background: #7dd3fc; }
-        #log { margin-top: 20px; color: #94a3b8; font-size: 14px; }
-        .copy-btn { font-size: 12px; background: #475569; color: white; padding: 5px; margin-left: 5px; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rnadom Ahh online games</title>
 </head>
-<body>
-
-    <div id="setup-screen">
-        <div class="card">
-            <h2>🚀 Tank Online</h2>
-            <p>Deine ID: <span id="my-id" style="color:#38bdf8; font-weight:bold">Verbinde zum Server...</span></p>
-            <div style="margin-bottom: 20px;">
-                <input type="text" id="join-id" placeholder="ID vom Freund eingeben">
-                <button onclick="connectToPeer()">KAMPF STARTEN</button>
-            </div>
-            <p id="log">Status: Initialisiere Netzwerk...</p>
-        </div>
-    </div>
-
-    <div id="ui-layer">
-        <div class="score" style="color: #38bdf8">Du: <span id="score-me">0</span></div>
-        <div class="score" style="color: #fb923c">Gegner: <span id="score-them">0</span></div>
-    </div>
-
-    <canvas id="gameCanvas"></canvas>
-
-<script>
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = 800;
-    canvas.height = 600;
-
-    let peer, conn;
-    let myId = "";
-    let scoreMe = 0, scoreThem = 0;
-    const keys = {};
-
-    // Panzer Objekte
-    const me = { x: 100, y: 300, angle: 0, color: "#38bdf8", bullets: [] };
-    const them = { x: 700, y: 300, angle: Math.PI, color: "#fb923c", bullets: [] };
-
-    // 1. PeerJS Initialisierung
-    function initPeer() {
-        // Wir nutzen den Standard-Cloud-Server von PeerJS
-        peer = new Peer();
-
-        peer.on('open', id => {
-            myId = id;
-            document.getElementById('my-id').innerText = id;
-            updateLog("Bereit! Schicke deine ID einem Freund.");
-        });
-
-        // Wenn uns jemand anruft
-        peer.on('connection', c => {
-            conn = c;
-            setupConnection();
-            updateLog("Verbindung akzeptiert! Starte Spiel...");
-        });
-
-        peer.on('error', err => {
-            console.error(err);
-            updateLog("Fehler: " + err.type);
-        });
-    }
-
-    // 2. Verbindung herstellen
-    function connectToPeer() {
-        const targetId = document.getElementById('join-id').value;
-        if (!targetId) return alert("ID fehlt!");
-        
-        updateLog("Verbinde zu: " + targetId);
-        conn = peer.connect(targetId);
-        setupConnection();
-    }
-
-    function setupConnection() {
-        conn.on('open', () => {
-            document.getElementById('setup-screen').style.display = 'none';
-            gameLoop();
-        });
-
-        conn.on('data', data => {
-            if (data.type === 'sync') {
-                them.x = data.x;
-                them.y = data.y;
-                them.angle = data.angle;
-                them.bullets = data.bullets;
-            }
-            if (data.type === 'hit') {
-                scoreThem++;
-                resetPosition();
-            }
-        });
-    }
-
-    function updateLog(msg) {
-        document.getElementById('log').innerText = "Status: " + msg;
-    }
-
-    // 3. Spiel-Logik
-    function resetPosition() {
-        me.x = Math.random() * 700 + 50;
-        me.y = Math.random() * 500 + 50;
-    }
-
-    function gameLoop() {
-        // Bewegung
-        if (keys['w'] || keys['ArrowUp']) {
-            me.x += Math.cos(me.angle) * 3;
-            me.y += Math.sin(me.angle) * 3;
-        }
-        if (keys['s'] || keys['ArrowDown']) {
-            me.x -= Math.cos(me.angle) * 2;
-            me.y -= Math.sin(me.angle) * 2;
-        }
-        if (keys['a'] || keys['ArrowLeft']) me.angle -= 0.05;
-        if (keys['d'] || keys['ArrowRight']) me.angle += 0.05;
-
-        // Schießen (Leertaste)
-        if (keys[' '] && me.bullets.length < 5) {
-            me.bullets.push({ x: me.x, y: me.y, a: me.angle, t: 0 });
-            keys[' '] = false; // Verhindert Dauerfeuer
-        }
-
-        // Bullets updaten
-        me.bullets = me.bullets.filter(b => {
-            b.x += Math.cos(b.a) * 7;
-            b.y += Math.sin(b.a) * 7;
-            b.t++;
+<style>
+          body { margin: 0; background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+          a{ 
+            text-decoration: none;
+            color: antiquewhite;
+          }a:hover{ 
+            text-decoration: wavy;
+            color: rgb(255, 204, 137);
             
-            // Kollision mit Gegner prüfen
-            let dist = Math.hypot(them.x - b.x, them.y - b.y);
-            if (dist < 20) {
-                scoreMe++;
-                conn.send({ type: 'hit' });
-                return false;
-            }
-            return b.t < 100;
-        });
+          }
 
-        // Zeichnen
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawTank(me);
-        drawTank(them);
-        
-        document.getElementById('score-me').innerText = scoreMe;
-        document.getElementById('score-them').innerText = scoreThem;
+          marquee{
+            position: absolute;
+            top: 3px;
+            right: 0px;
+          }
+</style>
+<body>
+    <marquee behavior="none" direction="#fb923c">Nicht von Albert Einstein: (He is dead you piece of sh..)</marquee>
+    <h1>Hier sind random ahh online Spiele</h1>
 
-        // Sync an Gegner senden
-        conn.send({
-            type: 'sync',
-            x: me.x, y: me.y, angle: me.angle, bullets: me.bullets
-        });
-
-        requestAnimationFrame(gameLoop);
-    }
-
-    function drawTank(t) {
-        ctx.save();
-        ctx.translate(t.x, t.y);
-        ctx.rotate(t.angle);
-        ctx.fillStyle = t.color;
-        ctx.fillRect(-15, -10, 30, 20);
-        ctx.fillStyle = "white";
-        ctx.fillRect(5, -2, 15, 4);
-        ctx.restore();
-
-        t.bullets.forEach(b => {
-            ctx.fillStyle = "yellow";
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, 3, 0, Math.PI*2);
-            ctx.fill();
-        });
-    }
-
-    window.addEventListener('keydown', e => keys[e.key] = true);
-    window.addEventListener('keyup', e => keys[e.key] = false);
-
-    initPeer();
-</script>
+    <br><br>
+    <a href="tank.html">tank.io</a>
+    <a href="space.html">NeonSpace.io</a>
 </body>
 </html>
