@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>NEON SPACE WARS - ONLINE</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { margin: 0; background: #050505; color: #00f2ff; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+        canvas { background: radial-gradient(circle, #111 0%, #000 100%); border: 2px solid #00f2ff; box-shadow: 0 0 20px #00f2ff55; border-radius: 5px; }
+        
+        #setup { position: absolute; inset: 0; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; }
+        .box { border: 2px solid #00f2ff; padding: 40px; background: #000; box-shadow: 0 0 30px #00f2ff33; }
+        input { background: #111; border: 1px solid #00f2ff; color: #fff; padding: 12px; width: 250px; margin: 10px; font-family: monospace; }
+        button { background: #00f2ff; color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; text-transform: uppercase; letter-spacing: 2px; }
+        button:hover { background: #fff; box-shadow: 0 0 15px #fff; }
+        
+        .score-board { position: absolute; top: 20px; display: flex; gap: 40px; font-size: 20px; text-shadow: 0 0 10px #00f2ff; pointer-events: none; }
+        #status { color: #555; font-size: 12px; margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+    <div id="setup">
+        <div class="box">
+            <h1>NEON SPACE WARS</h1>
+            <p>DEINE SCHIFF-ID: <span id="my-id" style="color:#fff">...lade...</span></p>
+            <input type="text" id="target-id" placeholder="GEGNER ID EINGEBEN">
+            <br>
+            <button onclick="connect()">WARP-START</button>
+            <p id="status">INITIALISIERE QUANTUM-LINK...</p>
+        </div>
+    </div>
+
+    <div class="score-board">
+        <div>PILOT (DU): <span id="score-me">0</span></div>
+        <div>ENEMY: <span id="score-them">0</span></div>
+    </div>
+
+    <canvas id="game"></canvas>
+
+<script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 1000;
+    canvas.height = 700;
+
+    let peer, conn, myId;
+    let scoreMe = 0, scoreThem = 0;
+    const keys = {};
+
+    // Schiff-Physik
+    const p1 = { x: 200, y: 350, vx: 0, vy: 0, angle: 0, color: '#00f2ff', bullets: [], lastShot: 0 };
+    const p2 = { x: 800, y: 350, vx: 0, vy: 0, angle: Math.PI, color: '#ff0077', bullets: [] };
+
+    function init() {
+        peer = new Peer();
+        peer.on('open', id => {
+            myId = id;
+            document.getElementById('my-id').innerText = id;
+            document.getElementById('status').innerText = "LINK BEREIT. WARTE AUF GEGNER...";
+        });
+        peer.on('connection', c => {
+            conn = c;
+            start();
+        });
+    }
+
+    function connect() {
+        const id = document.getElementById('target-id').value;
+        if (!id) return;
+        conn = peer.connect(id);
+        start();
+    }
+
+    function start() {
+        conn.on('open', () => {
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('status').innerText = "VERBUNDEN!";
+            loop();
+        });
+        conn.on('data', data => {
+            if (data.type === 'update') {
+                p2.x = data.x; p2.y = data.y; p2.angle = data.angle; p2.bullets = data.bullets;
+            }
+            if (data.type === 'hit') {
+                scoreThem++;
+                p1.x = Math.random() * 800; p1.y = Math.random() * 600;
+                p1.vx = 0; p1.vy = 0;
+            }
+        });
+    }
+
+    function loop() {
+        update();
+        draw();
+        
+        if (conn && conn.open) {
+            conn.send({ type: 'update', x: p1.x, y: p1.y, angle: p1.angle, bullets: p1.bullets });
+        }
+        requestAnimationFrame(loop);
+    }
+
+    function update() {
+        // Rotation
+        if (keys['a'] || keys['ArrowLeft']) p1.angle -= 0.07;
+        if (keys['d'] || keys['ArrowRight']) p1.angle += 0.07;
+
+        // Schub (Trägheit)
+        if (keys['w'] || keys['ArrowUp']) {
+            p1.vx += Math.cos(p1.angle) * 0.2;
+            p1.vy += Math.sin(p1.angle) * 0.2;
+        }
+
+        // Physik anwenden
+        p1.x += p1.vx;
+        p1.y += p1.vy;
+        p1.vx *= 0.98; // Reibung im All ;)
+        p1.vy *= 0.98;
+
+        // Screen Wrap
+        if (p1.x < 0) p1.x = canvas.width;
+        if (p1.x > canvas.width) p1.x = 0;
+        if (p1.y < 0) p1.y = canvas.height;
+        if (p1.y > canvas.height) p1.y = 0;
+
+        // Schießen
+        if (keys[' '] && Date.now() - p1.lastShot > 250) {
+            p1.bullets.push({ x: p1.x, y: p1.y, a: p1.angle, age: 0 });
+            p1.lastShot = Date.now();
+        }
+
+        // Projektile
+        p1.bullets = p1.bullets.filter(b => {
+            b.x += Math.cos(b.a) * 8;
+            b.y += Math.sin(b.a) * 8;
+            b.age++;
+
+            let dist = Math.hypot(p2.x - b.x, p2.y - b.y);
+            if (dist < 20) {
+                scoreMe++;
+                conn.send({ type: 'hit' });
+                return false;
+            }
+            return b.age < 60;
+        });
+
+        document.getElementById('score-me').innerText = scoreMe;
+        document.getElementById('score-them').innerText = scoreThem;
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Sterne (einfach)
+        ctx.fillStyle = "#fff";
+        for(let i=0; i<20; i++) ctx.fillRect(Math.random()*canvas.width, Math.random()*canvas.height, 1, 1);
+
+        drawShip(p1);
+        drawShip(p2);
+    }
+
+    function drawShip(s) {
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(s.angle);
+        
+        // Schiff-Design (Dreieck)
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(15, 0);
+        ctx.lineTo(-10, 10);
+        ctx.lineTo(-5, 0);
+        ctx.lineTo(-10, -10);
+        ctx.closePath();
+        ctx.stroke();
+        
+        // Glow Effekt
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = s.color;
+        ctx.stroke();
+        ctx.restore();
+
+        // Bullets
+        s.bullets.forEach(b => {
+            ctx.fillStyle = s.color;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, 2, 0, Math.PI*2);
+            ctx.fill();
+        });
+    }
+
+    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keyup', e => keys[e.key] = false);
+
+    init();
+</script>
+</body>
+</html>
